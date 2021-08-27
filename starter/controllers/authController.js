@@ -1,3 +1,4 @@
+const { promisify } = require("util");
 const jwt = require("jsonwebtoken");
 const User = require("./../models/userModel");
 
@@ -69,4 +70,65 @@ exports.login = async (req, res, next) => {
       message: err,
     });
   }
+};
+
+exports.protect = async (req, res, next) => {
+  try {
+    let token;
+    // Get the token
+    if (
+      req.headers.authorization &&
+      req.headers.authorization.startsWith("Bearer")
+    ) {
+      token = req.headers.authorization.split(" ")[1];
+    }
+    console.log(token);
+    if (!token) {
+      res.status(401).json({
+        status: "fail",
+        message: "Please login",
+      });
+      return next();
+    }
+
+    // Validate token
+    const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
+    // console.log(decoded);
+
+    // Check if user exists
+    const currentUser = await User.findById(decoded.id);
+    if (!currentUser) {
+      res.status(401).json({
+        status: "fail",
+        message: "Please login",
+      });
+      return next();
+    }
+    // Check if user changed password after token was issued
+    if (currentUser.changedPasswordAfter(decoded.iat)) {
+      res.status(401).json({
+        status: "fail",
+        message: "Please login.Password changed",
+      });
+      return next();
+    }
+    req.user = currentUser;
+    next();
+  } catch (err) {
+    res.status(404).json({
+      status: "fail",
+      message: err,
+    });
+  }
+};
+
+exports.restrictTo = (...roles) => {
+  return (req, res, next) => {
+    // roles is array ["admin","lead-guide"]
+    if (!roles.includes(req.user.role)) {
+      return next();
+    }
+
+    next();
+  };
 };
